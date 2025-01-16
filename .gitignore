@@ -1,0 +1,12 @@
+#Pastas
+.vscode
+__pycache__
+build
+btipos_conteudo_email\__pycache__
+Arquivos uteis
+
+#Arquivos
+credenciais_google.json
+imagens\Fapec-logo.ico
+imagens\Fapec-logo.png
+backup-email.mbox
