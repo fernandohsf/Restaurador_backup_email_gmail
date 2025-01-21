@@ -57,7 +57,12 @@ def corpo_email(mensagem, pasta_email, numero_email):
 
                 elif "vnd.openxmlformats-officedocument.presentationml.presentation" == extensao:
                     extensao = ".pptx"
+
+                elif "plain" == extensao:
+                    extensao = ".txt"
+                    
                 extensao = f".{extensao}"
+
                 if not nome_anexo.endswith(f".{extensao}"):
                     nome_anexo = os.path.splitext(nome_anexo)[0] + f".{extensao}"
                 caminho_imagem = os.path.join(pasta_email, f"Email_{numero_email}_Anexo_{nome_anexo}")
