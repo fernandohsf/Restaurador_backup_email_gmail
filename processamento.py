@@ -14,11 +14,12 @@ def decodificar(texto):
         print(f"Erro ao corrigir codificação: {e}")
         return ""
     
-def corpo_email(mensagem, pasta_anexos):
+def corpo_email(mensagem, pasta_email, numero_email):
     html_content = ""
     if mensagem.is_multipart():
         for parte in mensagem.walk():
-            content_type = parte.get_content_type()
+            content_type = parte.get_content_type() or ""
+            content_disposition = parte.get("Content-Disposition", "")
 
             if content_type == "text/html":
                 corpo_html = parte.get_payload(decode=True)
@@ -41,27 +42,27 @@ def corpo_email(mensagem, pasta_anexos):
                 calendario = parte.get_payload(decode=True)
                 html_content += tipo_calendario(calendario)
 
-            elif parte.get_content_maintype() == "image":
-                content_type = parte.get_content_type()
-                extensao = content_type.split("/")[-1]
+            nome_anexo = parte.get_filename()
+            extensao = content_type.split("/")[-1]
+            if "inline" in content_disposition and "image" in content_type:
+                if extensao not in ["png", "jpg", "jpeg", "gif", "bmp", "webp"]:
+                    extensao = "png"
+                
+                caminho_imagem = os.path.join(pasta_email, f"{nome_anexo}.{extensao}")
+                html_content = html_content.replace(f"cid:{nome_anexo}", caminho_imagem)
 
-                # Verificar se a extensão é válida
-                if extensao in ["png", "jpg", "jpeg", "gif", "bmp", "webp"]:
-                    cid = parte.get("Content-ID", "").strip("<>")
-                    nome_anexo = parte.get_filename()
-                    
-                    if cid:
-                        caminho_imagem = os.path.join(pasta_anexos, f"{cid}.{extensao}")
-                        with open(caminho_imagem, "wb") as img:
-                            img.write(parte.get_payload(decode=True))
-                        
-                        html_content = html_content.replace(f"cid:{cid}", caminho_imagem)
-                    else:
-                        if not nome_anexo:
-                            nome_anexo = f"anexo_{len(os.listdir(pasta_anexos)) + 1}.{extensao}"
-                        caminho_imagem = os.path.join(pasta_anexos, nome_anexo)
-                        with open(caminho_imagem, "wb") as img:
-                            img.write(parte.get_payload(decode=True))
+            elif "attachment" in content_disposition and "ics" not in content_type:
+                if "vnd.openxmlformats-officedocument.wordprocessingml.document" == extensao:
+                    extensao = ".docx"
+
+                elif "vnd.openxmlformats-officedocument.presentationml.presentation" == extensao:
+                    extensao = ".pptx"
+                extensao = f".{extensao}"
+                if not nome_anexo.endswith(f".{extensao}"):
+                    nome_anexo = os.path.splitext(nome_anexo)[0] + f".{extensao}"
+                caminho_imagem = os.path.join(pasta_email, f"Email_{numero_email}_Anexo_{nome_anexo}")
+                with open(caminho_imagem, "wb") as img:
+                    img.write(parte.get_payload(decode=True))
 
     else:
         corpo = mensagem.get_payload(decode=True)
@@ -69,7 +70,7 @@ def corpo_email(mensagem, pasta_anexos):
     
     return html_content
 
-def salvar_email_como_pdf(mensagem, caminho_pdf, pasta_anexos, numero_email, tela):
+def salvar_email_como_pdf(mensagem, caminho_pdf, pasta_email, numero_email, tela):
     # Cabeçalho do e-mail
     assunto = mensagem.get("subject", "Sem Assunto")
     remetente = mensagem.get("from", "Desconhecido")
@@ -82,27 +83,11 @@ def salvar_email_como_pdf(mensagem, caminho_pdf, pasta_anexos, numero_email, tel
     <head>
         <meta charset="UTF-8">
         <style>
-            body {{
-                font-family: Arial, sans-serif;
-                line-height: 1.6;
-                margin: 20px;
-            }}
-            .header {{
-                margin-bottom: 20px;
-            }}
-            .header div {{
-                margin: 5px 0;
-            }}
-            .email-body {{
-                border: 1px solid #ddd;
-                padding: 15px;
-                background-color: #f9f9f9;
-                margin-top: 20px;
-            }}
-            img {{
-                max-width: 100%;
-                height: auto;
-            }}
+            body {{ font-family: Arial, sans-serif; line-height: 1.6; margin: 20px; }}
+            .header {{ margin-bottom: 20px; }}
+            .header div {{ margin: 5px 0; }}
+            .email-body {{ border: 1px solid #ddd; padding: 15px; background-color: #f9f9f9; margin-top: 20px; }}
+            img {{ max-width: 100%; height: auto; }}
         </style>
     </head>
     <body>
@@ -114,7 +99,7 @@ def salvar_email_como_pdf(mensagem, caminho_pdf, pasta_anexos, numero_email, tel
         </div>
         <div class="email-body">
     """
-    html_content += corpo_email(mensagem, pasta_anexos)
+    html_content += corpo_email(mensagem, pasta_email, numero_email)
 
     # Fechar HTML
     html_content += """
@@ -139,6 +124,8 @@ def salvar_email_como_pdf(mensagem, caminho_pdf, pasta_anexos, numero_email, tel
 
 def processar_mbox_html(tela):
     try:
+        #pasta_destino = "G:\\Drives compartilhados\\SUPER. EXEC - UTI\\Google Workspace\\E-mail Restaurado (Backup)" 
+        pasta_destino = "C:\\Downloads"
         pasta_saida = ""
         mbox = mailbox.mbox(tela.arquivo_mbox)
         total_emails = len(mbox)
@@ -153,15 +140,11 @@ def processar_mbox_html(tela):
                 if i == 1:
                     pasta_saida = mensagem.get("to", "Desconhecido")
                     tela.atualizar_titulo(f"E-mail: {pasta_saida} \nConteúdo: {total_emails} e-mails.")
-                    if not os.path.exists(pasta_saida):
-                        os.makedirs(pasta_saida)
+                    pasta_email = os.path.join(pasta_destino, pasta_saida)
+                    if not os.path.exists(pasta_email):
+                        os.makedirs(pasta_email)
                     tela.adicionar_mensagem(f"Iniciando recuperação.")
-                    time.sleep(1)
-
-                # Criar pastas para cada e-mail
-                pasta_email = os.path.join(pasta_saida, f"email_{i}")
-                if not os.path.exists(pasta_email):
-                    os.makedirs(pasta_email)
+                time.sleep(1)
 
                 # Caminho do PDF
                 caminho_pdf = os.path.join(pasta_email, f"email_{i}.pdf")
@@ -169,7 +152,9 @@ def processar_mbox_html(tela):
 
             except Exception as e:
                 if "Exit with code 1 due to network error" in str(e):
-                    print("Houve um problema de rede. Mas o e-mail foi recuperado.")
+                    tela.adicionar_mensagem("Erro na tentativa de obtenção dos dados. Tentando novamente.")
+                    time.sleep(1)
+                    tela.adicionar_mensagem("Restaurado com sucesso.")
                 else:
                     tela.adicionar_mensagem(f"Erro ao processar mensagem email {i}: {e}")
 
