@@ -1,7 +1,8 @@
 import os
 import sys
+import zipfile
 import tkinter as tk
-from tkinter import ttk, filedialog
+from tkinter import ttk, filedialog, messagebox
 from PIL import Image, ImageTk
 from threading import Thread
 from processamento import processar_mbox_html
@@ -26,7 +27,7 @@ class Recuperacao_email:
         self.label_logo.image = imagemDeFundo
         self.label_logo.pack(pady=10)
 
-        self.titulo = tk.Label(root, text="Selecione um arquivo MBOX para recuperar os e-mails", font=("Arial", 16), bg=azul_escuro, fg=branco)
+        self.titulo = tk.Label(root, text="Selecione um arquivo para recuperar os e-mails", font=("Arial", 16), bg=azul_escuro, fg=branco)
         self.titulo.pack(pady=10)
 
         frame_principal = tk.Frame(root, bg=azul_escuro)
@@ -86,17 +87,51 @@ class Recuperacao_email:
     def selecionar_arquivo(self):
         arquivo = filedialog.askopenfilename(
             title="Selecione um arquivo",
-            filetypes=[("Arquivos MBOX", "*.mbox"), ("Todos os arquivos", "*.*")]
+            filetypes=[("Arquivos ZIP", "*.zip"), ("Todos os arquivos", "*.*")],
+            #initialdir="G:\\Drives compartilhados\\SUPER. EXEC - UTI\\Google Workspace\\Backup emails desativados"
+            initialdir="C:\\Automações Fapec\\Relatórios\\Restaurador de backup email\\backup email"
         )
         if arquivo:
-            self.arquivo_mbox = arquivo
-            self.botao_iniciar.config(state="normal")
-            self.adicionar_mensagem(f"Arquivo selecionado: {arquivo}")
+            thread = Thread(target=self.processar_arquivo_zip, args=(arquivo,), daemon=True)
+            thread.start()
+            
+
+    def processar_arquivo_zip(self, arquivo):
+        try:
+            self.adicionar_mensagem(f"Extraindo arquivos, por favor aguarde.")
+            pasta_temp = os.path.join(os.getcwd(), "temp_extracao")
+            if not os.path.exists(pasta_temp):
+                os.makedirs(pasta_temp)
+            
+            if zipfile.is_zipfile(arquivo):
+                with zipfile.ZipFile(arquivo, 'r') as zip_ref:
+                    zip_ref.extractall(pasta_temp)
+                    self.adicionar_mensagem(f"Arquivos extraidos com sucesso.")
+
+                arquivo_mbox = None
+                for root, _, files in os.walk(pasta_temp):
+                    for file in files:
+                        if file.endswith(".mbox"):
+                            arquivo_mbox = os.path.join(root, file)
+                            break
+                    if arquivo_mbox:
+                        break
+
+                if arquivo_mbox:
+                    self.arquivo_mbox = arquivo_mbox
+                    self.pasta_temp = pasta_temp
+                    self.botao_iniciar.config(state="normal")
+                else:
+                    messagebox.showerror("Erro", "Nenhum arquivo .mbox encontrado no ZIP.")
+            else:
+                messagebox.showerror("Erro", "O arquivo selecionado não é um ZIP válido.")
+        except Exception as e:
+            messagebox.showerror("Erro", f"Erro ao processar o arquivo: {e}")
 
     def iniciar_processamento(self, ):
         self.botao_iniciar.config(state="disabled")
         self.botao_selecionar.config(state="disabled")
-        thread = Thread(target=processar_mbox_html, args=(self,))
+        thread = Thread(target=processar_mbox_html, args=(self,), daemon=True)
         thread.start()
 
     def atualizar_titulo(self, texto):
