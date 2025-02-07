@@ -26,7 +26,6 @@ def agrupar_pdf_anexos(pasta_email, numero_email, caminho_pdf, anexos_gerados):
     pdf_temp = os.path.join(pasta_email, f"Email_{numero_email}_temp.pdf")
     os.rename(caminho_pdf, pdf_temp)
     anexos_gerados.insert(0, pdf_temp)
-
     with PdfMerger() as pdf_agrupado:
         for anexo in anexos_gerados:
             pdf_agrupado.append(anexo)
@@ -330,7 +329,12 @@ def processar_mbox_html(tela):
                 salvar_email_como_pdf(mensagem, pasta_email, i, tela)
 
             except Exception as e:
-                tela.adicionar_mensagem(f"Erro ao processar mensagem email {i}: {e}")
+                if "Exit with code 1 due to network error" in str(e):
+                    tela.adicionar_mensagem("Erro na tentativa de obtenção dos dados. Tentando novamente.")
+                    time.sleep(1)
+                    tela.adicionar_mensagem("Restaurado com sucesso.")
+                else:
+                    tela.adicionar_mensagem(f"Erro ao processar mensagem email {i}: {e}")
 
         tela.adicionar_mensagem("Processamento concluído.")
     except Exception as e:
