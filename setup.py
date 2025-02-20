@@ -4,7 +4,7 @@ import os
 caminhoExe = os.path.dirname(os.path.realpath(__file__))
 
 build_exe_options = {
-    "packages": ["os", "sys", "time", "shutil", "pdfkit", "mailbox", "email", "icalendar", "tkinter", "threading", "bs4", "PIL", "win32com", "zipfile"],
+    "packages": ["os", "sys", "time", "fitz", "shutil", "pdfkit", "mailbox", "email", "icalendar", "tkinter", "threading", "bs4", "PIL", "win32com", "zipfile"],
     "include_files":[f"{caminhoExe}\\imagens", f"{caminhoExe}\\wkhtmltopdf"],
     "excludes": [],
 }

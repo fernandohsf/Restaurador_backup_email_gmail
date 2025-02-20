@@ -1,5 +1,6 @@
 import os
 import time
+import fitz
 import shutil
 import pdfkit
 import mailbox
@@ -48,7 +49,7 @@ def converter_para_pdf(extensao, caminho_anexo, anexo_convertido_pdf):
         pdfkit.from_string(html, anexo_convertido_pdf)
         os.remove(caminho_anexo)
 
-    elif extensao == "docx":
+    elif extensao == "docx" or extensao == "doc":
         word = client.Dispatch("Word.Application")
         word.Visible = False
         doc = word.Documents.Open(caminho_anexo)
@@ -59,14 +60,14 @@ def converter_para_pdf(extensao, caminho_anexo, anexo_convertido_pdf):
 
     elif extensao == "pptx":
         powerpoint = client.Dispatch("PowerPoint.Application")
-        powerpoint.Visible = 0
+        powerpoint.Visible = 1
         presentation = powerpoint.Presentations.Open(caminho_anexo, WithWindow=False)
         presentation.SaveAs(anexo_convertido_pdf, 32)  # 32 É O CÓDIGO PARA PDF
         presentation.Close()
         powerpoint.Quit()
         os.remove(caminho_anexo)
 
-    elif extensao == "xlsx":
+    elif extensao == "xlsx" or extensao == "xls" or extensao == "csv":
         excel = client.Dispatch("Excel.Application")
         excel.Visible = False
         excel.DisplayAlerts = False
@@ -78,16 +79,47 @@ def converter_para_pdf(extensao, caminho_anexo, anexo_convertido_pdf):
 
     return anexo_convertido_pdf
 
-def mapear_extensao(extensao):
+def mapear_extensao(extensao, nome_anexo):
     if extensao == "vnd.openxmlformats-officedocument.wordprocessingml.document":
         return ".docx"
+    if extensao == "msword":
+        return ".doc"
     if extensao == "vnd.openxmlformats-officedocument.spreadsheetml.sheet":
         return ".xlsx"
+    if extensao == "vnd.ms-excel":
+        return ".xls"
     if extensao == "vnd.openxmlformats-officedocument.presentationml.presentation":
         return ".pptx"
     if extensao == "plain":
         return ".txt"
+    if extensao == "octet-stream":
+        extensoes = (".html", ".pdf", ".xls", ".rar", ".zip", ".mso", ".eml", ".csv")
+        return next((ext for ext in extensoes if nome_anexo.endswith(ext)), ".pdf")
+
     return f".{extensao}"
+
+def verificar_filtro_no_pdf(caminho_pdf, filtro, pasta_email):
+    termos = [termo.strip().lower() for termo in filtro.split(';')]
+    termo_encontrado = False
+
+    with fitz.open(caminho_pdf) as doc:
+        for pagina in doc:
+            texto = pagina.get_text("text").lower()
+            
+            for termo in termos:
+                if termo in texto:
+                    termo_encontrado = True
+                    nome_pasta = termo.replace(" ", "_")
+                    caminho_pasta = os.path.join(pasta_email, nome_pasta)
+                    
+                    if not os.path.exists(caminho_pasta):
+                        os.makedirs(caminho_pasta)
+                    
+                    nome_arquivo = os.path.basename(caminho_pdf)
+                    novo_caminho = os.path.join(caminho_pasta, nome_arquivo)
+                    shutil.copy(caminho_pdf, novo_caminho)
+                    
+    return termo_encontrado
 
 def corpo_email(mensagem, pasta_email, numero_email):
     html_content = ""
@@ -174,7 +206,7 @@ def corpo_email(mensagem, pasta_email, numero_email):
 
                 # TRATAMENTO PARA ANEXOS QUE NÃO SEJAM CALENDÁRIOS
                 elif "attachment" in content_disposition and "ics" not in content_type:
-                    extensao = mapear_extensao(extensao)
+                    extensao = mapear_extensao(extensao, nome_anexo)
                     if not nome_anexo.endswith(f".{extensao}"):
                         nome_anexo = os.path.splitext(nome_anexo)[0] + f".{extensao}"
                         
@@ -206,7 +238,7 @@ def corpo_email(mensagem, pasta_email, numero_email):
 
     return html_content, anexos, imagens_corpo
 
-def salvar_email_como_pdf(mensagem, pasta_email, numero_email, tela):
+def salvar_email_como_pdf(mensagem, pasta_email, numero_email, tela, filtro):
     # CABEÇALHO E-MAIL
     assunto = mensagem.get("subject", "Sem Assunto")
 
@@ -276,7 +308,7 @@ def salvar_email_como_pdf(mensagem, pasta_email, numero_email, tela):
     options = {
         'enable-local-file-access': None
     }
-
+    
     try:
         pdfkit.from_string(html_content, caminho_pdf, configuration=config, options=options)
     except Exception as e:
@@ -290,18 +322,23 @@ def salvar_email_como_pdf(mensagem, pasta_email, numero_email, tela):
         for imagem in imagens_corpo:
             os.remove(imagem)
 
+    if filtro:
+        if verificar_filtro_no_pdf(caminho_pdf, filtro.lower(), pasta_email):
+            tela.adicionar_mensagem(f"E-mail {numero_email} salvo em PDF.")
+        time.sleep(1)
+        os.remove(caminho_pdf)
+    else:
         tela.adicionar_mensagem(f"E-mail {numero_email} salvo em PDF.")
 
-def processar_mbox_html(tela):
+def processar_mbox_html(tela, filtro):
     try:
-        #pasta_destino = "G:\\Drives compartilhados\\SUPER. EXEC - UTI\\Google Workspace\\E-mail Restaurado (Backup)" 
-        pasta_destino = "C:\\Downloads"
         pasta_saida = ""
         tela.adicionar_mensagem("Preparando o arquivo para leitura.")
         time.sleep(1)
         tela.adicionar_mensagem("O tempo pode variar dependendo do tamanho do arquivo, por favor aguarde.")
         mbox = mailbox.mbox(tela.arquivo_mbox)
         total_emails = len(mbox)
+        
         for i, mensagem in enumerate(mbox, start=1):
             try:
                 if isinstance(mensagem, mailbox.mboxMessage):
@@ -320,13 +357,13 @@ def processar_mbox_html(tela):
                         if pasta_saida == 'Desconhecido':
                             pasta_saida = mensagem.get("To", "Desconhecido")
                     tela.atualizar_titulo(f"E-mail: {pasta_saida} \nConteúdo: {total_emails} e-mails.")
-                    pasta_email = os.path.join(pasta_destino, pasta_saida)
+                    pasta_email = os.path.join(tela.pasta_destino, pasta_saida)
                     if not os.path.exists(pasta_email):
                         os.makedirs(pasta_email)
                     tela.adicionar_mensagem(f"Iniciando recuperação.")
                 time.sleep(1)
 
-                salvar_email_como_pdf(mensagem, pasta_email, i, tela)
+                salvar_email_como_pdf(mensagem, pasta_email, i, tela, filtro)
 
             except Exception as e:
                 if "Exit with code 1 due to network error" in str(e):
@@ -334,14 +371,15 @@ def processar_mbox_html(tela):
                     time.sleep(1)
                     tela.adicionar_mensagem("Restaurado com sucesso.")
                 else:
-                    tela.adicionar_mensagem(f"Erro ao processar mensagem email {i}: {e}")
+                    tela.adicionar_mensagem(f"Erro ao processar email {i}: {e}")
 
         tela.adicionar_mensagem("Processamento concluído.")
     except Exception as e:
         tela.adicionar_mensagem(f"Erro ao abrir o arquivo MBOX: {e}")
     finally:
         tela.botao_selecionar.config(state="normal")
-    
+        tela.barra_pesquisa.config(state="normal")
+        tela.entrada_filtro.config(state="normal")
         mbox.close()
 
         if os.path.exists(tela.pasta_temp):
